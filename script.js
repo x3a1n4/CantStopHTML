@@ -15,7 +15,7 @@ class Board{
     this.squares = [];
     
     for(var i = 2; i <= 12; i++ ){
-      var numSquares = -2*Math.abs(7-i) + 13;
+      var numSquares = Board.getNumSquares(i);
       for(var j = 0; j < numSquares; j++){
         this.squares.push(new Square(i, j));
       }
@@ -23,9 +23,14 @@ class Board{
   }
   
   draw(){
+    
     for(var i = 0; i < this.squares.length; i++){
       this.squares[i].draw();
     }
+  }
+
+  static getNumSquares(number){
+    return -2*Math.abs(7-number) + 13;
   }
 
   getSquare(number, index){
@@ -35,6 +40,28 @@ class Board{
       }
     }
     return null;
+  }
+
+  setWonNumber(number){
+    for(var i = 0; i < this.squares.length; i++){
+      if(this.squares[i].number == number){
+        
+        var thisSquare = this.squares[i];
+        thisSquare.isFilled = true;
+        thisSquare.fillColour = Token.playerColours[dieboard.playerturn];
+
+        console.log(thisSquare.isFilled, thisSquare.fillColour);
+      }
+      
+    }
+  }
+
+  isColumnFilled(number){
+    var thisSquare = this.getSquare(number, 0);
+    if(thisSquare != undefined){
+      return thisSquare.isFilled;
+    }
+    return false;
   }
     
 }
@@ -46,6 +73,9 @@ class Square{
   
   centerX;
   centerY;
+
+  fillColour = "#FFFFFFFF";
+  isFilled = false;
   
   constructor(number, index){
     this.number = number;
@@ -70,14 +100,17 @@ class Square{
   draw(){
     ctx.strokeStyle = '#777777';
     ctx.lineWidth = 2;
+    ctx.fillStyle = this.fillColour;
     
     ctx.beginPath();
     ctx.rect(this.x, 
              this.y, 
              Square.size, 
              Square.size);
+    ctx.fill();
     ctx.stroke();
     
+    ctx.fillStyle = "#000000";
     ctx.textAlign = "center";
     ctx.font = Square.fontSize + "px Arial";
     ctx.fillText(this.number, 
@@ -118,7 +151,25 @@ class Token{
   updatePos(){
     if(this.number > 0){
       var tokenSquare = board.getSquare(this.number, this.index);
-      [this.x, this.y] = [tokenSquare.centerX, tokenSquare.centerY];
+      try{
+        if(tokenSquare.isFilled){
+          [this.x, this.y] = [this.startx, this.starty];
+          this.index = -1;
+        }
+        [this.x, this.y] = [tokenSquare.centerX, tokenSquare.centerY];
+      }catch(e){
+        
+      }
+
+      if(this.index >= Board.getNumSquares(this.number) - 1){
+        board.setWonNumber(this.number);
+        
+        //delete token
+        const index = tokens.indexOf(this);
+        if (index > -1) {
+          tokens.splice(index, 1);
+        }
+      }
     }
   }
 
@@ -172,6 +223,7 @@ class Die{
 class Button{
   static fontsize = 20;
   static playercolours = ["#FF7777", "#77FF77", "#7777FF"];
+  static altplayercolours = ["#FF4444", "#44FF44", "#4444FF"];
   
   fillcolour = "#CCCCCC";
   enabled = true;
@@ -182,13 +234,18 @@ class Button{
     this.width = width;
     this.height = height;
     this.text = text;
+
+    this.centerX = this.x + this.width/2;
+    this.centerY = this.y + this.height/2;
   }
   
   setFill(index){
     if(index < Button.playercolours.length && index >= 0){
       this.fillcolour = Button.playercolours[index];
+      this.altfillcolour = Button.altplayercolours[index];
     }else{
       this.fillcolour = "#CCCCCC";
+      this.altfillcolour = "#CCCCCC";
     }
     
   }
@@ -229,6 +286,7 @@ class DieButton extends Button{
   number1;
   number2;
   
+  
   constructor(x, y, width, height, text = ""){
     super(x, y, width, height, text = "");
   }
@@ -236,7 +294,63 @@ class DieButton extends Button{
   setNumbers(n1, n2){
     this.number1 = n1;
     this.number2 = n2;
+    
     this.text = n1 + " and " + n2;
+  }
+
+  isOnLeft(posX){
+    if(posX < this.centerX){
+      return true;
+    }
+    return false;
+  }
+
+  draw(){
+    ctx.strokeStyle = '#777777';
+    ctx.lineWidth = 2;
+    
+    ctx.beginPath();
+    ctx.rect(this.x, 
+      this.y, 
+      this.width, 
+      this.height);
+
+    ctx.stroke();
+    
+    
+    ctx.beginPath();
+    ctx.rect(this.x, 
+             this.y, 
+             this.width/2, 
+             this.height);
+    
+    if(board.isColumnFilled(this.number1)){
+      ctx.fillStyle = '#CCCCCC';
+    }else{
+      ctx.fillStyle = this.fillcolour;
+    }
+    
+    ctx.fill();
+    
+    ctx.beginPath();
+    ctx.rect(this.x + this.width/2, 
+            this.y, 
+            this.width/2, 
+            this.height);
+    
+    if(board.isColumnFilled(this.number2)){
+      ctx.fillStyle = '#CCCCCC';
+    }else{
+      ctx.fillStyle = this.altfillcolour;
+    }
+    ctx.fill();
+    
+    ctx.fillStyle = "#000000";
+    ctx.textAlign = "center";
+    ctx.font = Button.fontsize + "px Arial";
+    ctx.fillText(this.text, 
+                 this.x + this.width/2, 
+                 this.y + (0.75*this.height));
   }
 }
 
@@ -304,9 +418,15 @@ class DieBoard{
             this.rollability = false;
           }
           else if(clickedButton == this.endturnbutton){
-            //doesn't work
-            console.log(this.canplay);
-            if(this.canplay){
+            //clicked end turn button
+            
+            var playable = false;
+            this.buttons.forEach(b => {
+              if(b instanceof DieButton){
+                playable += this.canmovetokens(b.number1, b.number2);
+              }
+            });
+            if(playable){
               this.getplayertokens().forEach(e => {
                 e.startnumber = e.number;
                 e.startindex = e.index;
@@ -329,7 +449,8 @@ class DieBoard{
 
           }
           else{
-            this.movetokens(clickedButton.number1, clickedButton.number2);
+            //clicked die button
+            this.movetokens(clickedButton.number1, clickedButton.number2, clickedButton.isOnLeft(e.clientX));
             this.rollability = true;
 
             this.buttons.forEach(e => {
@@ -346,23 +467,18 @@ class DieBoard{
   }
 
   getplayertokens(){
-    var startpoint = this.playerturn * 3;
-    var endpoint = (this.playerturn+1) * 3;
-
-    var playerTokens = tokens.slice(startpoint,endpoint);
-
-    //console.log(playerTokens);
+    var playerTokens = []
+    tokens.forEach(token => {
+      if(token.player == this.playerturn){
+        playerTokens.push(token)
+      }
+    });
     return playerTokens;
   }
 
   canmovetokens(n1, n2){
-    var startpoint = this.playerturn * 3;
-    var endpoint = (this.playerturn+1) * 3;
-
     var playable = false;
-
-    var playerTokens = tokens.slice(startpoint,endpoint);
-    playerTokens.forEach(e => {
+    this.getplayertokens().forEach(e => {
       playable += [undefined, n1, n2].includes(e.number);
     });
 
@@ -370,30 +486,39 @@ class DieBoard{
     return playable;
   }
 
-  movetokens(n1, n2) {
-    var numbers = [n1, n2];
-
-    var startpoint = this.playerturn * 3
-    var endpoint = (this.playerturn+1) * 3
-
-    //move up tokens that can
-    for(var i = startpoint; i < endpoint; i++){
-      var moveamount = [n1, n2].filter(number => number == tokens[i].number).length;
-      if(moveamount){
-        //should remove this element from list, so that when you move a token forward one not on the board doesn't go in the same row
-        //don't actually do this, it will be fixed by deciding where the token can go
-        tokens[i].index += moveamount;
-      }
+  movetokens(n1, n2, side) {
+    var numbers;
+    if(side){
+      //left side
+      numbers = [n1, n2];
+    }else{
+      //right side
+      numbers = [n2, n1];
     }
 
-    //move up unplayed tokens
-    //you need to be able to pick where to move token if only one is left
-    for(var i = startpoint; i < endpoint; i++){
-      if(!(tokens[i].number > 0)){
-        tokens[i].number = numbers.pop(0);
-        tokens[i].index = 0;
+    var tokens = this.getplayertokens();
+    //move tokens on board
+    numbers.forEach(n => {
+      tokens.forEach(token =>{
+        if(token.number == n){
+          token.index++;
+        }
+      });
+    });
+
+    //move tokens not on board
+    tokens.forEach(token =>{
+      if(token.number == undefined){
+        token.number = numbers.shift();
+        token.index = 0;
+        //if numbers are same
+        if(n1 == n2){
+          token.index++;
+          numbers.shift();
+        }
       }
-    }
+    });
+    
   }
   
   roll(){
